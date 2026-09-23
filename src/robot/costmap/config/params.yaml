@@ -1,3 +1,9 @@
-# costmap_node:
-#   ros__parameters:
-
+# Keep the decimal points: these parameters are declared as doubles, and a bare integer
+# (e.g. 40) would be read as an int and rejected at startup.
+costmap_node:
+  ros__parameters:
+    resolution: 0.1          # metres per cell
+    width_m: 40.0            # grid size, centred on the lidar (lidar range is 20 m)
+    height_m: 40.0
+    inflation_radius: 1.6    # metres; cost falls linearly from max_cost to 0 over this distance
+    max_cost: 100            # cost of a cell containing an obstacle
