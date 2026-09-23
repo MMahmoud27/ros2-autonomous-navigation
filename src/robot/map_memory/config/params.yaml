@@ -1,3 +1,13 @@
-# map_memory_node:
-#   ros__parameters:
-    
+# Keep the decimal points: these parameters are declared as doubles, and a bare integer
+# (e.g. 40) would be read as an int and rejected at startup.
+map_memory_node:
+  ros__parameters:
+    frame_id: "sim_world"    # world frame the map is published in
+    resolution: 0.1          # metres per cell (same as the costmap)
+    width_m: 40.0            # covers the 30 x 30 m arena with margin
+    height_m: 40.0
+    origin_x: -20.0          # world position of the map's bottom-left corner
+    origin_y: -20.0
+    update_distance: 1.5     # merge a new costmap after moving this far (m)
+    max_turn_rate: 0.3       # never merge while turning faster than this (rad/s)
+    publish_period_s: 1.0    # how often the map is checked for updates and republished
