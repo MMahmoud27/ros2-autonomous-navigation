@@ -19,7 +19,8 @@ struct MapMemoryParams {
   double height_m = 40.0;
   double origin_x = -20.0;             // world position of the map's bottom-left corner
   double origin_y = -20.0;
-  double update_distance = 1.5;        // merge a new costmap only after moving this far (m)
+  double update_distance = 1.5;        // merge a new costmap after moving this far (m)...
+  double max_update_interval = 2.0;    // ...or after this long without a merge (s)
   double max_turn_rate = 0.3;          // never merge while turning faster than this (rad/s)
 };
 
@@ -37,15 +38,17 @@ class MapMemoryCore {
   public:
     explicit MapMemoryCore(const rclcpp::Logger& logger, const MapMemoryParams& params = MapMemoryParams());
 
-    // Whether a costmap taken at `pose` should be merged. Never while turning faster than
-    // max_turn_rate (the scan and its pose can't be matched exactly, so a turn smears obstacles);
-    // otherwise always the first time, then once the robot has moved update_distance.
-    bool shouldIntegrate(const Pose2D& pose, double turn_rate) const;
+    // Whether a costmap taken at `pose` and time `time_s` should be merged. Never while turning faster
+    // than max_turn_rate (the scan and its pose can't be matched exactly, so a turn smears obstacles);
+    // otherwise always the first time, then once the robot has moved update_distance or
+    // max_update_interval has passed. The time rule matters at startup: the first scans can arrive
+    // before the simulator has loaded the world, and a robot that isn't moving must still catch up.
+    bool shouldIntegrate(const Pose2D& pose, double turn_rate, double time_s) const;
 
     // Merges a costmap into the map. `pose` is where the costmap's frame was in the map frame when
-    // its scan was taken. Each map cell under the costmap keeps the higher of its old and new cost;
-    // unknown (-1) costmap cells leave the map unchanged.
-    void integrateCostmap(const nav_msgs::msg::OccupancyGrid& costmap, const Pose2D& pose);
+    // its scan was taken, at `time_s`. Each map cell under the costmap keeps the higher of its old and
+    // new cost; unknown (-1) costmap cells leave the map unchanged.
+    void integrateCostmap(const nav_msgs::msg::OccupancyGrid& costmap, const Pose2D& pose, double time_s);
 
     // The accumulated map; cells nobody has seen yet are -1 (unknown)
     const nav_msgs::msg::OccupancyGrid& map() const;
@@ -55,6 +58,7 @@ class MapMemoryCore {
     MapMemoryParams params_;
     nav_msgs::msg::OccupancyGrid map_;
     std::optional<Pose2D> last_integration_pose_;
+    double last_integration_time_s_ = 0.0;
 };
 
 }

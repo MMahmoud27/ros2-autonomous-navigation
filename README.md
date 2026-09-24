@@ -26,7 +26,7 @@ parameters, while the algorithm lives in a `robot::*Core` class with no ROS I/O,
 | Node | What it does | Key design choices |
 |---|---|---|
 | **costmap** | Turns each lidar scan into a 40 × 40 m, 0.1 m grid centred on the robot | A hit costs 100, falling linearly to 0 over 2.5 m. A precomputed stencil is stamped around each hit, keeping the higher cost where zones overlap. |
-| **map_memory** | Stitches the costmaps into one 40 × 40 m map of the arena, published every second | Each costmap is placed using the odometry reading closest to its scan's timestamp. Merge = max(old, new), because the world is static. Every map cell looks up the costmap cell under it, so a rotated costmap leaves no holes. Merges every 1.5 m of travel, never while turning fast. |
+| **map_memory** | Stitches the costmaps into one 40 × 40 m map of the arena, published every second | Each costmap is placed using the odometry reading closest to its scan's timestamp. Merge = max(old, new), because the world is static. Every map cell looks up the costmap cell under it, so a rotated costmap leaves no holes. Merges after 1.5 m of travel or 2 s, never while turning fast. |
 | **planner** | A\* from the robot to the clicked goal | 8-connected grid with an octile heuristic. Entering a cell costs its length × (1 + 3 · cost / 100), so paths keep to the middle of gaps. Cost ≥ 34 (within 1.65 m of an obstacle) is blocked. Goals need 2 m of clearance so the robot can turn on the spot when it leaves; closer goals move up to 2.5 m to get it. Replans every 0.5 s; an empty path means stop. |
 | **control** | Pure pursuit along the path, 10 Hz | Steers toward the path point 1.5 m ahead with curvature 2y / L², at 0.8 m/s. Turns on the spot when the target is behind. When the turn rate would exceed 1 rad/s it slows down rather than widening the arc. Stops with a single zero command. |
 
@@ -68,6 +68,10 @@ real surface, with no phantom obstacles after driving and turning.
 2. **Moved goals never "arrived".** Goals clicked near obstacles are moved away from them, but arrival was still measured
    to the clicked point, so the robot waited at the end of its path until the 90 s timeout. Arrival is now measured to
    where the path ends, and goals are parked 2 m clear so the robot can always turn when it leaves.
+3. **The map started empty.** On a fresh `./watod up`, the first lidar scans arrive before Gazebo has loaded the
+   world. The map merged one of those empty scans, then waited for 1.5 m of travel before merging again, so a goal
+   clicked straight away could be planned through the cylinder in front of the robot. The map now also merges
+   every 2 s while the robot isn't moving. This one only showed up when testing from a fresh clone.
 
 ## Running it
 Needs Docker on Linux, WSL2 (Windows) or macOS.
@@ -94,7 +98,7 @@ Every tunable number lives in the node's `src/robot/<node>/config/params.yaml`.
 ```bash
 ./scripts/run_unit_tests.sh
 ```
-Builds the four packages in a throwaway container and runs 41 gtest cases: costmap 7, map memory 9, planner 14,
+Builds the four packages in a throwaway container and runs 42 gtest cases: costmap 7, map memory 10, planner 14,
 control 11. They were written before the code they test, with expected values worked out by hand
 (for example, a target at (1.6, 1.2) m must give curvature 0.6). Two of them were also checked by breaking the code on
 purpose: with walls made passable, the no-path tests fail; with the goal check removed, the stop test fails.

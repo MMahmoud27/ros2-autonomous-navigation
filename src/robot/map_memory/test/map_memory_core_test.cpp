@@ -6,7 +6,7 @@
 
 #include "map_memory_core.hpp"
 
-// With the default params the map is 40 x 40 m at 0.1 m per cell, bottom-left corner at (-20, -20)
+// With the test params the map is 40 x 40 m at 0.1 m per cell, bottom-left corner at (-20, -20)
 // in sim_world, so map cell (mx, my) has its centre at (-20 + (mx + 0.5) * 0.1, -20 + (my + 0.5) * 0.1).
 //
 // The test costmap is 10 x 10 cells at 0.1 m with its corner at (-0.5, -0.5) in the costmap frame,
@@ -14,6 +14,22 @@
 
 namespace
 {
+
+// Pinned here so tuning params.yaml or the defaults never changes what these tests check
+robot::MapMemoryParams testParams()
+{
+  robot::MapMemoryParams params;
+  params.frame_id = "sim_world";
+  params.resolution = 0.1;
+  params.width_m = 40.0;
+  params.height_m = 40.0;
+  params.origin_x = -20.0;
+  params.origin_y = -20.0;
+  params.update_distance = 1.5;
+  params.max_update_interval = 2.0;
+  params.max_turn_rate = 0.3;
+  return params;
+}
 
 nav_msgs::msg::OccupancyGrid makeCostmap(int8_t fill = 0)
 {
@@ -52,7 +68,7 @@ geometry_msgs::msg::Quaternion yawQuaternion(double yaw)
 class MapMemoryCoreTest : public ::testing::Test
 {
 protected:
-  robot::MapMemoryCore memory{rclcpp::get_logger("map_memory_core_test")};
+  robot::MapMemoryCore memory{rclcpp::get_logger("map_memory_core_test"), testParams()};
 };
 
 TEST_F(MapMemoryCoreTest, MapStartsUnknownWithConfiguredGeometry)
@@ -75,7 +91,7 @@ TEST_F(MapMemoryCoreTest, CostmapCellLandsAtItsWorldPosition)
   setCost(costmap, 7, 5, 100);
 
   // Costmap frame at (2, 3), no rotation: (0.25, 0.05) -> world (2.25, 3.05) -> map cell (222, 230)
-  memory.integrateCostmap(costmap, {2.0, 3.0, 0.0});
+  memory.integrateCostmap(costmap, {2.0, 3.0, 0.0}, 0.0);
   const auto& map = memory.map();
 
   EXPECT_EQ(costAt(map, 222, 230), 100);
@@ -91,7 +107,7 @@ TEST_F(MapMemoryCoreTest, CostmapIsRotatedByTheHeading)
   setCost(costmap, 7, 5, 100);
 
   // Heading 90 deg: (0.25, 0.05) rotates to (-0.05, 0.25) -> world (1.95, 3.25) -> map cell (219, 232)
-  memory.integrateCostmap(costmap, {2.0, 3.0, M_PI / 2.0});
+  memory.integrateCostmap(costmap, {2.0, 3.0, M_PI / 2.0}, 0.0);
   const auto& map = memory.map();
 
   EXPECT_EQ(costAt(map, 219, 232), 100);
@@ -102,15 +118,15 @@ TEST_F(MapMemoryCoreTest, HigherCostWinsWhenMerging)
 {
   auto first = makeCostmap();
   setCost(first, 7, 5, 100);
-  memory.integrateCostmap(first, {2.0, 3.0, 0.0});
+  memory.integrateCostmap(first, {2.0, 3.0, 0.0}, 0.0);
 
   auto second = makeCostmap();  // cell (7, 5) now free, cell (6, 5) now 40
   setCost(second, 6, 5, 40);
-  memory.integrateCostmap(second, {2.0, 3.0, 0.0});
+  memory.integrateCostmap(second, {2.0, 3.0, 0.0}, 0.0);
 
   auto third = makeCostmap();   // cell (6, 5) now only 20
   setCost(third, 6, 5, 20);
-  memory.integrateCostmap(third, {2.0, 3.0, 0.0});
+  memory.integrateCostmap(third, {2.0, 3.0, 0.0}, 0.0);
 
   const auto& map = memory.map();
   EXPECT_EQ(costAt(map, 222, 230), 100);  // a seen obstacle is never erased
@@ -121,10 +137,10 @@ TEST_F(MapMemoryCoreTest, UnknownCostmapCellsLeaveTheMapUnchanged)
 {
   auto seen = makeCostmap();
   setCost(seen, 7, 5, 100);
-  memory.integrateCostmap(seen, {2.0, 3.0, 0.0});
+  memory.integrateCostmap(seen, {2.0, 3.0, 0.0}, 0.0);
 
-  memory.integrateCostmap(makeCostmap(-1), {2.0, 3.0, 0.0});   // same area, all unknown
-  memory.integrateCostmap(makeCostmap(-1), {-5.0, -5.0, 0.0}); // new area, all unknown
+  memory.integrateCostmap(makeCostmap(-1), {2.0, 3.0, 0.0}, 0.0);   // same area, all unknown
+  memory.integrateCostmap(makeCostmap(-1), {-5.0, -5.0, 0.0}, 0.0); // new area, all unknown
 
   const auto& map = memory.map();
   EXPECT_EQ(costAt(map, 222, 230), 100);
@@ -137,26 +153,39 @@ TEST_F(MapMemoryCoreTest, CostmapHangingOffTheMapEdgeIsClipped)
   setCost(costmap, 5, 5, 77);  // centred on (0.05, 0.05)
 
   // At (19.9, 19.9) most of the costmap is outside the map; (19.95, 19.95) is the last map cell
-  memory.integrateCostmap(costmap, {19.9, 19.9, 0.0});
+  memory.integrateCostmap(costmap, {19.9, 19.9, 0.0}, 0.0);
 
   EXPECT_EQ(costAt(memory.map(), 399, 399), 77);
 }
 
-TEST_F(MapMemoryCoreTest, IntegratesFirstCostmapThenOnlyAfterMovingFarEnough)
+TEST_F(MapMemoryCoreTest, IntegratesFirstCostmapThenAfterMovingFarEnough)
 {
-  EXPECT_TRUE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.0));
+  EXPECT_TRUE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.0, 0.0));
 
-  memory.integrateCostmap(makeCostmap(), {0.0, 0.0, 0.0});
+  memory.integrateCostmap(makeCostmap(), {0.0, 0.0, 0.0}, 0.0);
 
-  EXPECT_FALSE(memory.shouldIntegrate({1.0, 1.0, 0.0}, 0.0));  // moved 1.41 m < 1.5 m
-  EXPECT_TRUE(memory.shouldIntegrate({1.5, 0.3, 0.0}, 0.0));   // moved 1.53 m
+  EXPECT_FALSE(memory.shouldIntegrate({1.0, 1.0, 0.0}, 0.0, 1.0));  // moved 1.41 m < 1.5 m
+  EXPECT_TRUE(memory.shouldIntegrate({1.5, 0.3, 0.0}, 0.0, 1.0));   // moved 1.53 m
+}
+
+TEST_F(MapMemoryCoreTest, IntegratesAgainAfterStandingStillLongEnough)
+{
+  // The first scans can arrive before the simulator has loaded the world, so a robot that hasn't
+  // moved must still refresh its map now and then (every 2 s with the test params)
+  memory.integrateCostmap(makeCostmap(), {0.0, 0.0, 0.0}, 10.0);
+
+  EXPECT_FALSE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.0, 11.5));  // 1.5 s later
+  EXPECT_TRUE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.0, 12.0));   // 2 s later
 }
 
 TEST_F(MapMemoryCoreTest, NeverIntegratesWhileTurningFast)
 {
-  EXPECT_FALSE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.5));   // even the first costmap
-  EXPECT_FALSE(memory.shouldIntegrate({0.0, 0.0, 0.0}, -0.5));  // either direction
-  EXPECT_TRUE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.2));    // slow turn is fine
+  EXPECT_FALSE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.5, 0.0));   // even the first costmap
+  EXPECT_FALSE(memory.shouldIntegrate({0.0, 0.0, 0.0}, -0.5, 0.0));  // either direction
+  EXPECT_TRUE(memory.shouldIntegrate({0.0, 0.0, 0.0}, 0.2, 0.0));    // slow turn is fine
+
+  memory.integrateCostmap(makeCostmap(), {0.0, 0.0, 0.0}, 0.0);
+  EXPECT_FALSE(memory.shouldIntegrate({3.0, 0.0, 0.0}, 0.5, 5.0));   // moved and waited, but turning
 }
 
 TEST(YawFromQuaternionTest, RecoversTheHeading)

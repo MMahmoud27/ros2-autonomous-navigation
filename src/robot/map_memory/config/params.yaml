@@ -8,6 +8,9 @@ map_memory_node:
     height_m: 40.0
     origin_x: -20.0          # world position of the map's bottom-left corner
     origin_y: -20.0
-    update_distance: 1.5     # merge a new costmap after moving this far (m)
+    update_distance: 1.5     # merge a new costmap after moving this far (m)...
+    # ...or after this long without a merge (s). Needed at startup: the first scans can arrive before
+    # the simulator has loaded the world, and a robot that hasn't moved must still catch up.
+    max_update_interval: 2.0
     max_turn_rate: 0.3       # never merge while turning faster than this (rad/s)
     publish_period_s: 1.0    # how often the map is checked for updates and republished

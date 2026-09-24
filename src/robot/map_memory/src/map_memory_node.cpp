@@ -35,6 +35,7 @@ robot::MapMemoryParams MapMemoryNode::loadParams() {
   params.origin_x = this->declare_parameter("origin_x", params.origin_x);
   params.origin_y = this->declare_parameter("origin_y", params.origin_y);
   params.update_distance = this->declare_parameter("update_distance", params.update_distance);
+  params.max_update_interval = this->declare_parameter("max_update_interval", params.max_update_interval);
   params.max_turn_rate = this->declare_parameter("max_turn_rate", params.max_turn_rate);
   return params;
 }
@@ -70,12 +71,14 @@ void MapMemoryNode::costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPt
 }
 
 void MapMemoryNode::updateMap() {
-  if (latest_costmap_ &&
-      map_memory_.shouldIntegrate(latest_costmap_odom_.pose, latest_costmap_odom_.turn_rate)) {
-    map_memory_.integrateCostmap(*latest_costmap_, latest_costmap_odom_.pose);
-    RCLCPP_INFO(this->get_logger(), "Merged costmap taken at (%.2f, %.2f)",
-      latest_costmap_odom_.pose.x, latest_costmap_odom_.pose.y);
-    latest_costmap_.reset();
+  if (latest_costmap_) {
+    const double scan_time_s = rclcpp::Time(latest_costmap_->header.stamp).seconds();
+    if (map_memory_.shouldIntegrate(latest_costmap_odom_.pose, latest_costmap_odom_.turn_rate, scan_time_s)) {
+      map_memory_.integrateCostmap(*latest_costmap_, latest_costmap_odom_.pose, scan_time_s);
+      RCLCPP_DEBUG(this->get_logger(), "Merged costmap taken at (%.2f, %.2f)",
+        latest_costmap_odom_.pose.x, latest_costmap_odom_.pose.y);
+      latest_costmap_.reset();
+    }
   }
 
   auto map = map_memory_.map();

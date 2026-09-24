@@ -30,7 +30,7 @@ MapMemoryCore::MapMemoryCore(const rclcpp::Logger& logger, const MapMemoryParams
     map_.info.width, map_.info.height, params_.resolution, params_.frame_id.c_str());
 }
 
-bool MapMemoryCore::shouldIntegrate(const Pose2D& pose, double turn_rate) const
+bool MapMemoryCore::shouldIntegrate(const Pose2D& pose, double turn_rate, double time_s) const
 {
   if (std::abs(turn_rate) > params_.max_turn_rate) {
     return false;
@@ -38,11 +38,12 @@ bool MapMemoryCore::shouldIntegrate(const Pose2D& pose, double turn_rate) const
   if (!last_integration_pose_) {
     return true;
   }
-  return std::hypot(pose.x - last_integration_pose_->x, pose.y - last_integration_pose_->y) >=
-         params_.update_distance;
+  const double moved = std::hypot(pose.x - last_integration_pose_->x, pose.y - last_integration_pose_->y);
+  return moved >= params_.update_distance || time_s - last_integration_time_s_ >= params_.max_update_interval;
 }
 
-void MapMemoryCore::integrateCostmap(const nav_msgs::msg::OccupancyGrid& costmap, const Pose2D& pose)
+void MapMemoryCore::integrateCostmap(
+  const nav_msgs::msg::OccupancyGrid& costmap, const Pose2D& pose, double time_s)
 {
   const double cm_res = costmap.info.resolution;
   const int cm_width = static_cast<int>(costmap.info.width);
@@ -105,6 +106,7 @@ void MapMemoryCore::integrateCostmap(const nav_msgs::msg::OccupancyGrid& costmap
   }
 
   last_integration_pose_ = pose;
+  last_integration_time_s_ = time_s;
 }
 
 const nav_msgs::msg::OccupancyGrid& MapMemoryCore::map() const
