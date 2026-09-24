@@ -46,20 +46,25 @@ Found by reading the simulator's source and checking in the running sim:
 
 ## Results
 Measured in the running simulator against the true obstacle positions from the world file, using the robot's full
-2 m × 1.4 m outline. This is the final regression run, after the fixes described below:
+2 m × 1.4 m outline. This is the final run: a fresh clone of this repo, a cold `./watod up`, and ten trips starting
+from the spawn point, after the fixes described below.
 
 | Scenario | Outcome | Closest the robot's body got to an obstacle |
 |---|---|---|
-| Goal clicked 1 m from a box | arrived; goal moved 1.3 m out to leave turning room | 1.11 m |
-| Then a goal behind the robot, clicked 1.4 m from the big cylinder | arrived; goal moved 0.65 m | 0.65 m |
-| Then a goal behind again | arrived | 0.87 m |
-| New goal given in the middle of a trip | arrived | 0.68 m |
-| Tightest gap in the arena (3.75 m, box to south wall) | arrived | 1.07 m |
-| Gap between the two south-east boxes | arrived | 1.32 m |
-| Three long trips across the arena (18–33 s each) | arrived | 0.72 m or more |
+| First goal right after startup, behind the cylinder the robot faces | arrived | 1.14 m |
+| Goal clicked 1 m from a box | arrived; goal moved out to leave turning room | 0.20 m |
+| Then a goal behind the robot, clicked 1.4 m from the big cylinder | arrived; goal moved out | 0.59 m |
+| Then a goal behind again | arrived | 0.82 m |
+| New goal given in the middle of a trip | arrived | 0.59 m |
+| Tightest gap in the arena (3.75 m, box to south wall) | arrived | 1.11 m |
+| Gap between the two south-east boxes | arrived | 1.20 m |
+| Three long trips across the arena (18–30 s each) | arrived | 1.13 m or more |
 
-9 of 9 goals reached with no contact. A path across the whole arena plans in 0.2–6.2 ms. Every obstacle cell in `/map` lies within 0.15 m of a
-real surface, with no phantom obstacles after driving and turning.
+- **10 of 10 goals reached with no contact.** A path across the whole arena plans in 0.2–6.2 ms.
+- **The map is accurate.** After all ten trips, `/map` holds 3,880 obstacle cells: 99% lie within 0.10 m of a real
+  surface, the worst is 0.20 m off, and none are phantoms (more than 0.25 m off).
+- **The map is ready at startup.** After a cold `./watod up`, `/map` shows the real obstacles within about 7 s.
+- **Idle means silent.** When it has no path the controller publishes nothing, so Foxglove's teleop panel works.
 
 ### What the stress tests caught
 1. **Turning clipped a box.** The first version only blocked cells within 0.96 m of an obstacle (half the robot's width
