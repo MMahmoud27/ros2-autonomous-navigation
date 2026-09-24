@@ -1,3 +1,10 @@
-# planner_node:
-#   ros__parameters:
-    
+# Keep the decimal points on the doubles: a bare integer (e.g. 90) is read as an int and rejected.
+planner_node:
+  ros__parameters:
+    lethal_cost: 40          # costmap cost at which a cell is blocked (~0.95 m from an obstacle)
+    cost_weight: 3.0         # how strongly paths keep away from obstacles (0 = shortest path only)
+    goal_snap_radius: 1.0    # a goal inside the blocked zone moves to a free cell within this (m)
+    goal_tolerance: 0.5      # the goal counts as reached when the axle is this close (m)
+    timeout_s: 90.0          # give up on a goal after this long (s)
+    replan_period_s: 0.5     # how often to check progress and replan (s)
+    lidar_to_axle: 1.3       # the odometry (lidar) frame is this far ahead of the wheel axle (m)
