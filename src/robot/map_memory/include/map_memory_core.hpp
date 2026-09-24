@@ -34,6 +34,10 @@ struct Pose2D {
 // Heading (rotation about z) of a quaternion, in radians
 double yawFromQuaternion(const geometry_msgs::msg::Quaternion& q);
 
+// The pose at time t, blended linearly between pose a (at time ta) and pose b (at time tb), with the
+// heading turning the short way round. Used to place a scan at the exact moment it was taken.
+Pose2D interpolatePose(const Pose2D& a, double ta, const Pose2D& b, double tb, double t);
+
 class MapMemoryCore {
   public:
     explicit MapMemoryCore(const rclcpp::Logger& logger, const MapMemoryParams& params = MapMemoryParams());

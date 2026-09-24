@@ -14,6 +14,18 @@ double yawFromQuaternion(const geometry_msgs::msg::Quaternion& q)
   return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 }
 
+Pose2D interpolatePose(const Pose2D& a, double ta, const Pose2D& b, double tb, double t)
+{
+  const double f = tb > ta ? (t - ta) / (tb - ta) : 0.0;
+  // Heading change wrapped into (-pi, pi], so e.g. 3.1 -> -3.1 rad is a small turn through 180 deg
+  const double turn = std::atan2(std::sin(b.yaw - a.yaw), std::cos(b.yaw - a.yaw));
+  Pose2D p;
+  p.x = a.x + f * (b.x - a.x);
+  p.y = a.y + f * (b.y - a.y);
+  p.yaw = a.yaw + f * turn;
+  return p;
+}
+
 MapMemoryCore::MapMemoryCore(const rclcpp::Logger& logger, const MapMemoryParams& params)
   : logger_(logger), params_(params)
 {

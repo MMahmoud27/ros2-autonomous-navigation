@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <iterator>
 #include <memory>
 
 #include "map_memory_node.hpp"
@@ -10,6 +11,8 @@ namespace
 {
 // Odometry arrives at 10 Hz, so this keeps the last 5 s; a costmap is always much newer than that
 constexpr size_t kOdomHistorySize = 50;
+// Costmaps arrive at 10 Hz and the map updates at 1 Hz, so this holds about the last second of them
+constexpr size_t kPendingCostmaps = 10;
 }  // namespace
 
 MapMemoryNode::MapMemoryNode() : Node("map_memory"), map_memory_(this->get_logger(), loadParams()) {
@@ -55,30 +58,36 @@ void MapMemoryNode::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom) 
 }
 
 void MapMemoryNode::costmapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr costmap) {
-  if (odom_history_.empty()) {
-    return;  // no pose yet to place this costmap with
+  pending_costmaps_.push_back(costmap);
+  if (pending_costmaps_.size() > kPendingCostmaps) {
+    pending_costmaps_.pop_front();
   }
-  // The costmap carries its scan's timestamp; use the odometry reading taken closest to it, so the
-  // obstacles are placed where the robot was when it saw them, not where it is now
-  const rclcpp::Time scan_time(costmap->header.stamp);
-  const auto closest = std::min_element(odom_history_.begin(), odom_history_.end(),
-    [&scan_time](const OdomSample& a, const OdomSample& b) {
-      return std::abs((a.stamp - scan_time).seconds()) < std::abs((b.stamp - scan_time).seconds());
-    });
-
-  latest_costmap_ = costmap;
-  latest_costmap_odom_ = *closest;
 }
 
 void MapMemoryNode::updateMap() {
-  if (latest_costmap_) {
-    const double scan_time_s = rclcpp::Time(latest_costmap_->header.stamp).seconds();
-    if (map_memory_.shouldIntegrate(latest_costmap_odom_.pose, latest_costmap_odom_.turn_rate, scan_time_s)) {
-      map_memory_.integrateCostmap(*latest_costmap_, latest_costmap_odom_.pose, scan_time_s);
-      RCLCPP_DEBUG(this->get_logger(), "Merged costmap taken at (%.2f, %.2f)",
-        latest_costmap_odom_.pose.x, latest_costmap_odom_.pose.y);
-      latest_costmap_.reset();
+  // Place the newest costmap that has odometry from both before and after its scan: the obstacles
+  // go where the robot was at the moment of the scan. (Pairing a costmap with the latest odometry
+  // when it arrives used readings up to 100 ms old, which during turns put far walls ~0.4 m off.)
+  for (auto it = pending_costmaps_.rbegin(); it != pending_costmaps_.rend(); ++it) {
+    const rclcpp::Time scan_time((*it)->header.stamp);
+    const auto after = std::find_if(odom_history_.begin(), odom_history_.end(),
+      [&scan_time](const OdomSample& s) { return s.stamp > scan_time; });
+    if (after == odom_history_.begin() || after == odom_history_.end()) {
+      continue;  // no odometry on one side of this scan (yet)
     }
+    const auto before = std::prev(after);
+    const double t = scan_time.seconds();
+    const robot::Pose2D pose = robot::interpolatePose(
+      before->pose, before->stamp.seconds(), after->pose, after->stamp.seconds(), t);
+    const double turn_rate = std::max(std::abs(before->turn_rate), std::abs(after->turn_rate));
+
+    if (map_memory_.shouldIntegrate(pose, turn_rate, t)) {
+      map_memory_.integrateCostmap(**it, pose, t);
+      RCLCPP_DEBUG(this->get_logger(), "Merged costmap taken at (%.2f, %.2f)", pose.x, pose.y);
+    }
+    // This costmap and every older one have now been dealt with
+    pending_costmaps_.erase(pending_costmaps_.begin(), it.base());
+    break;
   }
 
   auto map = map_memory_.map();

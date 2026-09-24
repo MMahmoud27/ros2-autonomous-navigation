@@ -14,7 +14,7 @@ class MapMemoryNode : public rclcpp::Node {
     MapMemoryNode();
 
   private:
-    // One odometry reading, kept briefly so each costmap can be paired with the pose at its scan time
+    // One odometry reading, kept briefly so each costmap can be placed at the pose of its scan time
     struct OdomSample {
       rclcpp::Time stamp;
       robot::Pose2D pose;
@@ -38,8 +38,9 @@ class MapMemoryNode : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::deque<OdomSample> odom_history_;
-    nav_msgs::msg::OccupancyGrid::SharedPtr latest_costmap_;
-    OdomSample latest_costmap_odom_;  // the odometry sample closest in time to latest_costmap_
+    // Costmaps not merged yet, oldest first. A costmap can only be placed once odometry from after its
+    // scan has arrived, so the pose at the scan time can be interpolated.
+    std::deque<nav_msgs::msg::OccupancyGrid::SharedPtr> pending_costmaps_;
 };
 
 #endif

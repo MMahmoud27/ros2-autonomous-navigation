@@ -188,6 +188,29 @@ TEST_F(MapMemoryCoreTest, NeverIntegratesWhileTurningFast)
   EXPECT_FALSE(memory.shouldIntegrate({3.0, 0.0, 0.0}, 0.5, 5.0));   // moved and waited, but turning
 }
 
+TEST(InterpolatePoseTest, BlendsPositionAndHeadingByTime)
+{
+  // Halfway in time between two odometry readings
+  const auto p = robot::interpolatePose({0.0, 0.0, 0.0}, 1.0, {2.0, 4.0, 0.2}, 2.0, 1.5);
+
+  EXPECT_NEAR(p.x, 1.0, 1e-9);
+  EXPECT_NEAR(p.y, 2.0, 1e-9);
+  EXPECT_NEAR(p.yaw, 0.1, 1e-9);
+
+  const auto q = robot::interpolatePose({0.0, 0.0, 0.0}, 1.0, {2.0, 4.0, 0.2}, 2.0, 1.25);  // a quarter of the way
+  EXPECT_NEAR(q.x, 0.5, 1e-9);
+  EXPECT_NEAR(q.yaw, 0.05, 1e-9);
+}
+
+TEST(InterpolatePoseTest, HeadingTurnsTheShortWayAcrossPlusMinusPi)
+{
+  // 3.1 rad -> -3.1 rad is a 0.08 rad turn through 180 deg, not a 6.2 rad turn back through 0
+  const auto p = robot::interpolatePose({0.0, 0.0, 3.1}, 0.0, {0.0, 0.0, -3.1}, 1.0, 0.5);
+
+  EXPECT_NEAR(std::cos(p.yaw), -1.0, 1e-9);  // pointing along 180 deg
+  EXPECT_NEAR(std::sin(p.yaw), 0.0, 1e-9);
+}
+
 TEST(YawFromQuaternionTest, RecoversTheHeading)
 {
   EXPECT_NEAR(robot::yawFromQuaternion(yawQuaternion(0.0)), 0.0, 1e-9);
