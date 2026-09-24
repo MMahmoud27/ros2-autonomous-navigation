@@ -53,7 +53,8 @@ class PlannerNode : public rclcpp::Node {
     State state_ = State::kWaitingForGoal;
     nav_msgs::msg::OccupancyGrid::SharedPtr map_;
     nav_msgs::msg::Odometry::SharedPtr odom_;
-    robot::Point2D goal_;
+    robot::Point2D goal_;    // where the user clicked
+    robot::Point2D target_;  // where the latest path ends: the goal, or where it was moved to
     rclcpp::Time goal_received_time_;
     std::optional<robot::PlanStatus> last_status_;  // so outcomes are logged only when they change
 

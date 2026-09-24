@@ -8,10 +8,22 @@
 #include "planner_core.hpp"
 
 // Test grids use 1 m cells with the corner at (0, 0), so cell (x, y) is centred on (x + 0.5, y + 0.5)
-// and expected paths can be read straight off the grid.
+// and expected paths can be read straight off the grid. Test params: cells at cost >= 40 are blocked,
+// cost weight 3, blocked goals snap to a free cell within 1 m.
 
 namespace
 {
+
+// Pinned here so tuning params.yaml or the defaults never changes what these tests check
+robot::PlannerParams testParams()
+{
+  robot::PlannerParams params;
+  params.lethal_cost = 40;
+  params.goal_max_cost = 40;  // goals need no more clearance than paths, unless a test says so
+  params.cost_weight = 3.0;
+  params.goal_snap_radius = 1.0;
+  return params;
+}
 
 nav_msgs::msg::OccupancyGrid makeGrid(int width, int height, int8_t fill = 0)
 {
@@ -45,7 +57,7 @@ bool contains(const std::vector<robot::Point2D>& path, double x, double y)
 class PlannerCoreTest : public ::testing::Test
 {
 protected:
-  robot::PlannerCore planner{rclcpp::get_logger("planner_core_test")};
+  robot::PlannerCore planner{rclcpp::get_logger("planner_core_test"), testParams()};
 };
 
 TEST_F(PlannerCoreTest, StraightLineInAnEmptyGrid)
@@ -121,7 +133,7 @@ TEST_F(PlannerCoreTest, DetoursAroundCostlyCellsWhenThatIsCheaper)
 
 TEST(PlannerCoreParamsTest, WithoutCostWeightTheShortestPathGoesStraightThrough)
 {
-  robot::PlannerParams params;
+  robot::PlannerParams params = testParams();
   params.cost_weight = 0.0;
   robot::PlannerCore planner(rclcpp::get_logger("planner_core_test"), params);
   auto grid = makeGrid(10, 3);
@@ -175,6 +187,29 @@ TEST_F(PlannerCoreTest, BlockedGoalMovesToTheNearestFreeCell)
 
   ASSERT_EQ(result.status, robot::PlanStatus::kOk);
   EXPECT_DOUBLE_EQ(result.path.back().x, 8.5);
+}
+
+TEST(PlannerCoreParamsTest, GoalsNeedMoreClearanceThanPaths)
+{
+  // Cell 9 costs 30: fine to drive through (below 40), but with goal_max_cost 20 too close to park
+  // on, so the goal moves to cell 8 (cost 10), 1 m away
+  auto grid = makeGrid(10, 1);
+  setCost(grid, 9, 0, 30);
+  setCost(grid, 8, 0, 10);
+  robot::PlannerParams params = testParams();
+
+  params.goal_max_cost = 40;
+  robot::PlannerCore lenient(rclcpp::get_logger("planner_core_test"), params);
+  const auto kept = lenient.planPath(grid, {0.5, 0.5}, {9.5, 0.5});
+
+  params.goal_max_cost = 20;
+  robot::PlannerCore strict(rclcpp::get_logger("planner_core_test"), params);
+  const auto moved = strict.planPath(grid, {0.5, 0.5}, {9.5, 0.5});
+
+  ASSERT_EQ(kept.status, robot::PlanStatus::kOk);
+  EXPECT_DOUBLE_EQ(kept.path.back().x, 9.5);
+  ASSERT_EQ(moved.status, robot::PlanStatus::kOk);
+  EXPECT_DOUBLE_EQ(moved.path.back().x, 8.5);
 }
 
 TEST_F(PlannerCoreTest, GoalDeepInsideAnObstacleIsRejected)

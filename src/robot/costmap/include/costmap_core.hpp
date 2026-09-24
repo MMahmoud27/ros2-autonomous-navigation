@@ -16,7 +16,7 @@ struct CostmapParams {
   double resolution = 0.1;        // metres per cell
   double width_m = 40.0;          // grid size in metres, centred on the lidar
   double height_m = 40.0;
-  double inflation_radius = 1.6;  // metres; cost falls linearly to 0 at this distance
+  double inflation_radius = 2.5;  // metres; cost falls linearly to 0 at this distance
   int max_cost = 100;             // cost of a cell that contains an obstacle
 };
 

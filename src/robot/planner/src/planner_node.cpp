@@ -25,6 +25,7 @@ PlannerNode::PlannerNode() : Node("planner"), planner_(this->get_logger(), loadP
 robot::PlannerParams PlannerNode::loadParams() {
   robot::PlannerParams params;
   params.lethal_cost = this->declare_parameter("lethal_cost", params.lethal_cost);
+  params.goal_max_cost = this->declare_parameter("goal_max_cost", params.goal_max_cost);
   params.cost_weight = this->declare_parameter("cost_weight", params.cost_weight);
   params.goal_snap_radius = this->declare_parameter("goal_snap_radius", params.goal_snap_radius);
   return params;
@@ -46,6 +47,7 @@ void PlannerNode::goalCallback(const geometry_msgs::msg::PointStamped::SharedPtr
   }
   goal_.x = goal->point.x;
   goal_.y = goal->point.y;
+  target_ = goal_;
   goal_received_time_ = this->now();
   state_ = State::kNavigating;
   last_status_.reset();
@@ -57,8 +59,10 @@ void PlannerNode::timerCallback() {
   if (state_ != State::kNavigating) {
     return;
   }
+  // Arrival is measured to where the path ends: if the goal was moved away from an obstacle, the
+  // robot can never get within goal_tolerance_ of the spot that was clicked
   const auto axle = axlePosition();
-  if (axle && std::hypot(goal_.x - axle->x, goal_.y - axle->y) < goal_tolerance_) {
+  if (axle && std::hypot(target_.x - axle->x, target_.y - axle->y) < goal_tolerance_) {
     stopNavigating("Goal reached");
     return;
   }
@@ -82,6 +86,9 @@ void PlannerNode::planAndPublish() {
   const double planning_ms =
     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 
+  if (result.status == robot::PlanStatus::kOk) {
+    target_ = result.path.back();
+  }
   if (result.status != last_status_) {
     if (result.status == robot::PlanStatus::kOk) {
       double length = 0.0;
@@ -90,6 +97,11 @@ void PlannerNode::planAndPublish() {
       }
       RCLCPP_INFO(this->get_logger(), "Path found: %zu points, %.1f m, planned in %.1f ms",
         result.path.size(), length, planning_ms);
+      const double moved = std::hypot(target_.x - goal_.x, target_.y - goal_.y);
+      if (moved > map_->info.resolution) {
+        RCLCPP_INFO(this->get_logger(), "Goal moved %.2f m to (%.2f, %.2f) to leave room around obstacles",
+          moved, target_.x, target_.y);
+      }
     } else {
       RCLCPP_WARN(this->get_logger(), "No path to (%.2f, %.2f): %s",
         goal_.x, goal_.y, robot::toString(result.status));

@@ -5,5 +5,8 @@ costmap_node:
     resolution: 0.1          # metres per cell
     width_m: 40.0            # grid size, centred on the lidar (lidar range is 20 m)
     height_m: 40.0
-    inflation_radius: 1.6    # metres; cost falls linearly from max_cost to 0 over this distance
+    # Metres; cost falls linearly from max_cost to 0 over this distance. With the planner blocking
+    # cost >= 34, cells within 2.5 * (1 - 0.34) = 1.65 m of an obstacle are off limits: the robot's
+    # front corner sweeps a 1.58 m circle around the axle when it turns on the spot.
+    inflation_radius: 2.5
     max_cost: 100            # cost of a cell containing an obstacle

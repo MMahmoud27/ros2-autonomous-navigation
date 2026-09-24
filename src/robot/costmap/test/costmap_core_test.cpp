@@ -8,12 +8,25 @@
 
 #include "costmap_core.hpp"
 
-// With the default params the grid is 40 x 40 m at 0.1 m per cell, centred on the lidar.
-// A point (x, y) in metres therefore lands in cell (floor((x + 20) / 0.1), floor((y + 20) / 0.1)).
+// The test params give a 40 x 40 m grid at 0.1 m per cell, centred on the lidar, with a 1.6 m
+// inflation radius. A point (x, y) in metres therefore lands in cell
+// (floor((x + 20) / 0.1), floor((y + 20) / 0.1)).
 // Test points sit in the middle of a cell so floating-point rounding can't move them across an edge.
 
 namespace
 {
+
+// Pinned here so tuning params.yaml or the defaults never changes what these tests check
+robot::CostmapParams testParams()
+{
+  robot::CostmapParams params;
+  params.resolution = 0.1;
+  params.width_m = 40.0;
+  params.height_m = 40.0;
+  params.inflation_radius = 1.6;
+  params.max_cost = 100;
+  return params;
+}
 
 sensor_msgs::msg::LaserScan makeScan(double angle_min, double angle_increment, const std::vector<float>& ranges)
 {
@@ -55,7 +68,7 @@ bool allFree(const nav_msgs::msg::OccupancyGrid& grid)
 class CostmapCoreTest : public ::testing::Test
 {
 protected:
-  robot::CostmapCore core{rclcpp::get_logger("costmap_core_test")};
+  robot::CostmapCore core{rclcpp::get_logger("costmap_core_test"), testParams()};
 };
 
 TEST_F(CostmapCoreTest, GridIsCentredOnLidarAndKeepsScanFrame)
@@ -102,7 +115,7 @@ TEST_F(CostmapCoreTest, InvalidRangesAreIgnored)
 
 TEST_F(CostmapCoreTest, InflationFallsOffLinearlyWithDistance)
 {
-  // Obstacle at cell (230, 240); default inflation radius 1.6 m, cost = 100 * (1 - d / 1.6)
+  // Obstacle at cell (230, 240); inflation radius 1.6 m, cost = 100 * (1 - d / 1.6)
   const auto grid = core.buildCostmap(scanHitting({{3.05, 4.05}}));
 
   EXPECT_EQ(costAt(grid, 235, 240), 68);  // 5 cells right: d = 0.5 m -> 68.75 -> 68
@@ -124,7 +137,7 @@ TEST_F(CostmapCoreTest, OverlappingInflationKeepsTheHighestCostNotTheSum)
 
 TEST(CostmapCoreParamsTest, HitOutsideTheGridIsIgnored)
 {
-  robot::CostmapParams params;
+  robot::CostmapParams params = testParams();
   params.width_m = 4.0;   // grid spans -2..2 m around the lidar
   params.height_m = 4.0;
   robot::CostmapCore core(rclcpp::get_logger("costmap_core_test"), params);

@@ -11,9 +11,10 @@ namespace robot
 
 // Tunable planner settings, loaded from params.yaml by the node
 struct PlannerParams {
-  int lethal_cost = 40;           // cells at or above this cost are blocked (~0.95 m from an obstacle)
+  int lethal_cost = 34;           // cells at or above this cost are blocked (1.65 m from an obstacle)
+  int goal_max_cost = 20;         // goals must cost less than this (2.0 m clear), so the robot parks with room to turn
   double cost_weight = 3.0;       // how strongly paths avoid high-cost cells (0 = shortest path only)
-  double goal_snap_radius = 1.0;  // a blocked goal moves to the nearest free cell within this (m)
+  double goal_snap_radius = 2.5;  // a goal costing too much moves to the nearest good cell within this (m)
 };
 
 struct Point2D {
@@ -25,7 +26,7 @@ enum class PlanStatus {
   kOk,
   kStartOutsideMap,
   kGoalOutsideMap,
-  kGoalBlocked,  // goal is inside the blocked zone with no free cell within goal_snap_radius
+  kGoalBlocked,  // goal is too close to an obstacle, with no better cell within goal_snap_radius
   kNoPath,       // no route between start and goal avoids the blocked cells
 };
 

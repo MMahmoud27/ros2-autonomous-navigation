@@ -1,9 +1,15 @@
 # Keep the decimal points on the doubles: a bare integer (e.g. 90) is read as an int and rejected.
 planner_node:
   ros__parameters:
-    lethal_cost: 40          # costmap cost at which a cell is blocked (~0.95 m from an obstacle)
+    # Costmap cost at which a cell is blocked. With the costmap's 2.5 m inflation this is 1.65 m from
+    # an obstacle: enough for the robot to turn on the spot anywhere on a path (its front corner
+    # sweeps 1.58 m around the axle). Blocking only the half-width (0.7 m) let turns clip obstacles.
+    lethal_cost: 34
+    # Goals must cost less than this (2.0 m from an obstacle), so the robot always parks with room
+    # to turn on the spot at the start of its next trip. Closer goals move to the nearest such cell.
+    goal_max_cost: 20
     cost_weight: 3.0         # how strongly paths keep away from obstacles (0 = shortest path only)
-    goal_snap_radius: 1.0    # a goal inside the blocked zone moves to a free cell within this (m)
+    goal_snap_radius: 2.5    # how far a goal may be moved to get that clearance (m)
     goal_tolerance: 0.5      # the goal counts as reached when the axle is this close (m)
     timeout_s: 90.0          # give up on a goal after this long (s)
     replan_period_s: 0.5     # how often to check progress and replan (s)

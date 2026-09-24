@@ -70,8 +70,10 @@ PlanResult PlannerCore::planPath(
     return result;
   }
 
-  // A goal clicked inside the blocked zone moves to the nearest free cell within goal_snap_radius
-  if (costOf(goal_id) >= params_.lethal_cost) {
+  // A goal too close to an obstacle to park on (cost >= goal_max_cost) moves to the nearest cell
+  // that isn't, within goal_snap_radius. Parking spots need more room than paths: the robot turns on
+  // the spot at the start of its next trip.
+  if (costOf(goal_id) >= params_.goal_max_cost) {
     const int reach = static_cast<int>(std::ceil(params_.goal_snap_radius / res));
     const int gx = goal_id % width;
     const int gy = goal_id / width;
@@ -80,7 +82,7 @@ PlanResult PlannerCore::planPath(
     for (int y = std::max(0, gy - reach); y <= std::min(height - 1, gy + reach); ++y) {
       for (int x = std::max(0, gx - reach); x <= std::min(width - 1, gx + reach); ++x) {
         const double d = std::hypot(origin_x + (x + 0.5) * res - goal.x, origin_y + (y + 0.5) * res - goal.y);
-        if (d <= params_.goal_snap_radius && d < best && costOf(y * width + x) < params_.lethal_cost) {
+        if (d <= params_.goal_snap_radius && d < best && costOf(y * width + x) < params_.goal_max_cost) {
           best = d;
           best_id = y * width + x;
         }
