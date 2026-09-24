@@ -2,9 +2,9 @@
 <package format="3">
   <name>control</name>
   <version>0.0.0</version>
-  <description>A sample ROS package for pubsub communication</description>
+  <description>Pure pursuit path-following controller for a differential-drive robot.</description>
 
-  <maintainer email="e23zhou@watonomous.ca">Eddy Zhou</maintainer>
+  <maintainer email="178491824+MMahmoud27@users.noreply.github.com">MMahmoud27</maintainer>
   <license>Apache2.0</license>
 
   <!--https://www.ros.org/reps/rep-0149.html#dependency-tags-->

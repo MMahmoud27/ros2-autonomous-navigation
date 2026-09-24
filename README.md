@@ -1,7 +1,7 @@
 # ros2-autonomous-navigation
 A modular ROS 2 Humble (C++) autonomous navigation pipeline for differential-drive robots. Integrates 2D LiDAR costmaps, persistent map memory, A* global path planning, and Pure Pursuit motion control in simulation.
 
-Built for the [WATonomous ASD admission assignment](https://github.com/WATonomous/wato_asd_training): click a point in Foxglove and the simulated robot plans a route around the obstacles and drives there.
+Click a point in Foxglove and the simulated robot plans a route around the obstacles and drives there.
 
 <!-- Demo video: add the link here -->
 
@@ -11,7 +11,7 @@ Built for the [WATonomous ASD admission assignment](https://github.com/WATonomou
 flowchart LR
     sim["Gazebo simulator"] -->|/lidar| costmap
     costmap -->|/costmap| map_memory
-    odom["odometry_spoof"] -->|/odom/filtered| map_memory
+    odom["odometry"] -->|/odom/filtered| map_memory
     odom -->|/odom/filtered| planner
     odom -->|/odom/filtered| control
     map_memory -->|/map| planner
@@ -30,19 +30,52 @@ parameters, while the algorithm lives in a `robot::*Core` class with no ROS I/O,
 | **planner** | A\* from the robot to the clicked goal | 8-connected grid with an octile heuristic. Entering a cell costs its length × (1 + 3 · cost / 100), so paths keep to the middle of gaps. Cost ≥ 34 (within 1.65 m of an obstacle) is blocked. Goals need 2 m of clearance so the robot can turn on the spot when it leaves; closer goals move up to 2.5 m to get it. Replans every 0.5 s; an empty path means stop. |
 | **control** | Pure pursuit along the path, 10 Hz | Steers toward the path point 1.5 m ahead with curvature 2y / L², at 0.8 m/s. Turns on the spot when the target is behind. When the turn rate would exceed 1 rad/s it slows down rather than widening the arc. Stops with a single zero command. |
 
-## Things the handout doesn't tell you
+### Node interfaces
+| Node | Subscribes | Publishes | Timer | Code |
+|---|---|---|---|---|
+| costmap | `/lidar` (LaserScan) | `/costmap` (OccupancyGrid) | none, runs per scan | [node](src/robot/costmap/src/costmap_node.cpp), [algorithm](src/robot/costmap/src/costmap_core.cpp) |
+| map_memory | `/costmap` (OccupancyGrid), `/odom/filtered` (Odometry) | `/map` (OccupancyGrid) | 1 Hz: merge when due, republish the map | [node](src/robot/map_memory/src/map_memory_node.cpp), [algorithm](src/robot/map_memory/src/map_memory_core.cpp) |
+| planner | `/map` (OccupancyGrid), `/goal_point` (PointStamped), `/odom/filtered` (Odometry) | `/path` (Path) | 2 Hz: check arrival and timeout, replan | [node](src/robot/planner/src/planner_node.cpp), [algorithm](src/robot/planner/src/planner_core.cpp) |
+| control | `/path` (Path), `/odom/filtered` (Odometry) | `/cmd_vel` (Twist) | 10 Hz control loop | [node](src/robot/control/src/control_node.cpp), [algorithm](src/robot/control/src/control_core.cpp) |
+
+## Things the simulator doesn't tell you
 Found by reading the simulator's source and checking in the running sim:
 
 - **Odometry is the lidar's pose, not the robot's.** `/odom/filtered` tracks `robot/chassis/lidar`, which sits 1.3 m ahead
-  of the wheel axle the robot turns around. The planner and controller work from the axle; mapping uses the lidar pose directly.
+  of the wheel axle the robot turns around.
 - **There is no `map` frame.** `/map` and `/path` are published in `sim_world`; the costmap keeps the scan's own frame.
-- **The robot never stops by itself.** The simulator's diff-drive keeps executing the last `/cmd_vel`, so the controller
-  sends one zero command to stop, then stays silent so Foxglove's teleop panel still works.
+- **The robot never stops by itself.** The simulator's diff-drive keeps executing the last `/cmd_vel` it received.
 - **The robot needs more room to turn than to drive.** It is 1.4 m wide, but turning on the spot sweeps its front corner
-  through a 1.58 m circle around the axle. A stress test caught a turn clipping a box when the blocked zone only covered
-  the half-width, so the blocked zone now covers the turning circle (1.65 m).
+  through a 1.58 m circle around the axle.
 - **`./watod down robot` removes every container**, not just the robot. To rebuild only the robot:
   `./watod build robot && ./watod up -d robot`.
+
+## Design decisions and the alternatives I rejected
+- **Merge with max, not overwrite.** Overwriting map cells with each new costmap looks natural, but the costmap marks
+  everything its lidar didn't hit as free, including the space hidden *behind* an obstacle. Overwriting would erase
+  obstacles as soon as something else blocked the view. The world is static, so a cell keeps the highest cost ever seen.
+- **No holes without a finer costmap.** Rotating a costmap and pushing its cells into the map leaves gaps between cells;
+  a common workaround is making the costmap finer than the map. Instead, each *map* cell looks up the costmap cell it
+  falls in, which can't leave holes at any resolution, so both grids stay at 0.1 m.
+- **Update the map by distance or time.** Merging only after 1.5 m of travel saves work, but a robot standing still
+  never refreshes its map. That broke cold starts (the first scans arrive before the world has loaded), so the map also
+  merges every 2 s. It never merges while turning fast, when small timing errors would smear obstacles.
+- **Place each scan at the pose it was taken from.** Scans and odometry arrive at different moments, so each costmap
+  waits until odometry exists on both sides of its timestamp and the pose is interpolated. Pairing it with the latest
+  odometry instead put distant walls up to 0.4 m off.
+- **Plan and steer from the wheel axle, not the odometry frame.** The robot turns about its axle, 1.3 m behind the
+  lidar. Pure pursuit's geometry assumes the point being steered is the turning centre, and the axle's velocity is what
+  `/cmd_vel` commands. Mapping still uses the lidar pose, because that is where the scans come from.
+- **Block the turning circle, not the half-width.** Blocking cells within 0.96 m of an obstacle (half the width plus a
+  margin) lets the robot drive through, but a turn on the spot there clips the obstacle. The planner blocks 1.65 m, so
+  the robot can turn anywhere on a path; gaps narrower than about 3.3 m are the price.
+- **Flat arrays for A\*, not a hash map of cells.** The grid has a fixed size, so every per-cell value (cost so far,
+  parent, visited) lives in a vector indexed by `y * width + x`. That is simpler and faster than hashing cell
+  coordinates; a plan across the arena takes 0.2–6.2 ms.
+- **Slow down rather than cut corners.** When a curve needs more than 1 rad/s of turning, the controller keeps the
+  curvature and lowers the speed, so the robot stays on the planned line instead of swinging wide.
+- **Stop with one command.** Since the simulator keeps executing the last command, stopping has to be explicit; after
+  one zero command the controller goes silent, so manual teleop still works whenever the robot is idle.
 
 ## Results
 Measured in the running simulator against the true obstacle positions from the world file, using the robot's full
@@ -83,6 +116,26 @@ from the spawn point, after the fixes described below.
    wall 15 m away by 0.4 m. Costmaps now wait until odometry exists on both sides of their scan, and the pose at the
    scan time is interpolated.
 
+## Extending the system
+- **On a real robot.** The navigation nodes only talk to `/lidar`, `/odom/filtered` and `/cmd_vel`, so the Gazebo
+  bridge would be swapped for the lidar and motor-controller drivers publishing the same topics. Real scans are noisy,
+  and the max-merge would keep every false return forever, so the map would need probabilistic updates (below).
+- **Localisation.** Here odometry is perfect. A real robot would fuse wheel odometry and an IMU in an EKF, then correct
+  drift with AMCL against a known map or with SLAM. Map memory would then have to cope with the pose being corrected
+  after scans were already merged.
+- **More sensors.** Cameras, radar or sonar become extra costmap layers merged into the same grid by max. A depth camera
+  catches obstacles above or below the lidar's single scan plane; a camera adds meaning, such as keeping extra
+  distance from people.
+- **Moving obstacles.** Max-merge never forgets, so a walking person would leave a permanent trail. That needs raytraced
+  clearing (cells a beam passes through become free again), log-odds occupancy that decays, and a local planner or
+  controller that checks the live costmap every cycle rather than trusting a path planned seconds ago.
+- **Smarter decisions.** The planner's two-state machine would grow into a behaviour tree: waypoint lists, recovery
+  behaviours (back up, rotate, clear the map, retry) and distinct handling for goals that can never be reached.
+- **A different drivetrain.** A car-like robot, or two carts joined at a pivot, can't turn on the spot, so the
+  turning-circle blocked zone and turn-in-place logic no longer apply. Planning would need a kinematically feasible
+  search such as Hybrid A\* or a state lattice, and control would need the steering geometry and, for a trailer, the
+  hitch angle to avoid jackknifing.
+
 ## Running it
 Needs Docker on Linux, WSL2 (Windows) or macOS.
 
@@ -116,10 +169,9 @@ purpose: with walls made passable, the no-path tests fail; with the goal check r
 ## Repository layout
 | Path | |
 |---|---|
-| `src/robot/costmap`, `map_memory`, `planner`, `control` | the navigation stack (this project) |
-| `src/robot/odometry_spoof`, `bringup_robot`, `src/gazebo`, `docker/`, `modules/`, `watod*` | simulation and tooling provided by WATonomous |
+| `src/robot/costmap`, `map_memory`, `planner`, `control` | the navigation stack |
+| `src/robot/odometry_spoof`, `bringup_robot`, `src/gazebo`, `docker/`, `modules/`, `watod*` | the simulation environment and Docker tooling it runs on |
 | `scripts/run_unit_tests.sh` | runs the unit tests |
 
-## Credits
-Assignment, simulator and Docker tooling by [WATonomous](https://github.com/WATonomous/wato_asd_training).
-Developed with the help of Claude (Anthropic) as a pair programmer, which the assignment allows.
+## License
+Apache-2.0, see [LICENSE](LICENSE).
