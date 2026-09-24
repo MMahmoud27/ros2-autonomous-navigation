@@ -1,3 +1,14 @@
-# control_node:
-#   ros__parameters:
-    
+# Keep the decimal points: these parameters are declared as doubles, and a bare integer
+# (e.g. 1) would be read as an int and rejected at startup.
+control_node:
+  ros__parameters:
+    lookahead_distance: 1.5     # steer toward the path point this far ahead (m)
+    linear_speed: 0.8           # cruising speed (m/s)
+    max_angular_speed: 1.0      # turn rate limit (rad/s)
+    goal_tolerance: 0.3         # stop when the end of the path is this close (m)
+    rotate_in_place_angle: 1.0  # turn on the spot when the target is more than this off heading (rad)
+    slowdown_distance: 1.5      # start slowing down this far from the goal (m)
+    min_speed_ratio: 0.25       # never slow below this fraction of linear_speed while driving
+    lidar_to_axle: 1.3          # the odometry (lidar) frame is this far ahead of the wheel axle (m)
+    control_rate_hz: 10.0       # how often a velocity command is sent
+    odom_timeout_s: 0.5         # stop if odometry is older than this (s)
