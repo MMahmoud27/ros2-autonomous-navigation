@@ -6,7 +6,7 @@
 
 #include "control_core.hpp"
 
-// Unless a test says otherwise the robot's axle is at the origin facing +x, with the default params:
+// Unless a test says otherwise the robot's axle is at the origin facing +x, with the test params:
 // lookahead 1.5 m, speed 0.8 m/s, max turn 1.0 rad/s, goal tolerance 0.3 m, turn on the spot beyond
 // 1.0 rad, slow down within 1.5 m of the goal but not below 25% speed.
 // Pure pursuit: for a target at (x, y) in the robot frame at distance L, curvature = 2y / L^2 and
@@ -14,6 +14,20 @@
 
 namespace
 {
+
+// Pinned here so tuning params.yaml or the defaults never changes what these tests check
+robot::ControlParams testParams()
+{
+  robot::ControlParams params;
+  params.lookahead_distance = 1.5;
+  params.linear_speed = 0.8;
+  params.max_angular_speed = 1.0;
+  params.goal_tolerance = 0.3;
+  params.rotate_in_place_angle = 1.0;
+  params.slowdown_distance = 1.5;
+  params.min_speed_ratio = 0.25;
+  return params;
+}
 
 // n + 1 evenly spaced points from a to b
 std::vector<robot::Point2D> line(robot::Point2D a, robot::Point2D b, int n)
@@ -37,7 +51,7 @@ std::vector<robot::Point2D> pathUpAndLeft()
 class ControlCoreTest : public ::testing::Test
 {
 protected:
-  robot::ControlCore control{rclcpp::get_logger("control_core_test")};
+  robot::ControlCore control{rclcpp::get_logger("control_core_test"), testParams()};
 };
 
 TEST_F(ControlCoreTest, EmptyPathMeansStandStill)
@@ -98,7 +112,7 @@ TEST_F(ControlCoreTest, TargetBehindTurnsOnTheSpot)
 
 TEST(ControlCoreParamsTest, TurnRateLimitSlowsDownInsteadOfWideningTheCurve)
 {
-  robot::ControlParams params;
+  robot::ControlParams params = testParams();
   params.linear_speed = 2.0;  // 2.0 * curvature 0.6 = 1.2 rad/s, over the 1.0 limit
   robot::ControlCore control(rclcpp::get_logger("control_core_test"), params);
 

@@ -11,12 +11,12 @@ namespace robot
 
 // Tunable controller settings, loaded from params.yaml by the node
 struct ControlParams {
-  double lookahead_distance = 1.5;     // steer toward the path point this far ahead (m)
-  double linear_speed = 0.8;           // cruising speed (m/s)
-  double max_angular_speed = 1.0;      // turn rate limit (rad/s)
+  double lookahead_distance = 1.8;     // steer toward the path point this far ahead (m)
+  double linear_speed = 1.5;           // cruising speed (m/s); at 3 m/s the robot pitches ~16 deg and the lidar sees the floor
+  double max_angular_speed = 1.5;      // turn rate limit (rad/s)
   double goal_tolerance = 0.3;         // stop when the path's end is this close (m)
   double rotate_in_place_angle = 1.0;  // turn on the spot when the target is more than this off heading (rad)
-  double slowdown_distance = 1.5;      // start slowing down this far from the goal (m)
+  double slowdown_distance = 2.5;      // start slowing down this far from the goal (m)
   double min_speed_ratio = 0.25;       // never slow below this fraction of linear_speed while driving
 };
 

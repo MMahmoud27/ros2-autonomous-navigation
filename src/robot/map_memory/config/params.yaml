@@ -12,5 +12,9 @@ map_memory_node:
     # ...or after this long without a merge (s). Needed at startup: the first scans can arrive before
     # the simulator has loaded the world, and a robot that hasn't moved must still catch up.
     max_update_interval: 2.0
-    max_turn_rate: 0.3       # never merge while turning faster than this (rad/s)
+    # Never merge while turning faster than this (rad/s). Scans are placed at the pose interpolated to
+    # their timestamp, so ordinary curves map cleanly; this only blocks fast spins on the spot. At 0.3
+    # the map stopped updating on every curve driven at 1.5 m/s, and the planner routed through the
+    # unseen side of the big cylinder.
+    max_turn_rate: 1.0
     publish_period_s: 1.0    # how often the map is checked for updates and republished

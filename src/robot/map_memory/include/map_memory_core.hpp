@@ -21,7 +21,7 @@ struct MapMemoryParams {
   double origin_y = -20.0;
   double update_distance = 1.5;        // merge a new costmap after moving this far (m)...
   double max_update_interval = 2.0;    // ...or after this long without a merge (s)
-  double max_turn_rate = 0.3;          // never merge while turning faster than this (rad/s)
+  double max_turn_rate = 1.0;          // never merge while turning faster than this (rad/s)
 };
 
 // Position and heading of a frame, expressed in the map frame
