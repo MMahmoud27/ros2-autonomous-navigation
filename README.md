@@ -3,7 +3,7 @@ A modular ROS 2 Humble (C++) autonomous navigation pipeline for differential-dri
 
 Click a point in Foxglove and the simulated robot plans a route around the obstacles and drives there.
 
-<!-- Demo video: add the link here -->
+**[▶ Watch the demo video](https://drive.google.com/file/d/1Ttzek0rLZ-83s_e8tNnNfj-8D2mpI1om/view?usp=sharing)**
 
 ## How it works
 
@@ -28,7 +28,7 @@ parameters, while the algorithm lives in a `robot::*Core` class with no ROS I/O,
 | **costmap** | Turns each lidar scan into a 40 × 40 m, 0.1 m grid centred on the robot | A hit costs 100, falling linearly to 0 over 2.5 m. A precomputed stencil is stamped around each hit, keeping the higher cost where zones overlap. |
 | **map_memory** | Stitches the costmaps into one 40 × 40 m map of the arena, published every second | Each costmap is placed at the robot's pose at the moment of its scan, interpolated between the odometry readings either side. Merge = max(old, new), because the world is static. Every map cell looks up the costmap cell under it, so a rotated costmap leaves no holes. Merges after 1.5 m of travel or 2 s, never while turning fast. |
 | **planner** | A\* from the robot to the clicked goal | 8-connected grid with an octile heuristic. Entering a cell costs its length × (1 + 3 · cost / 100), so paths keep to the middle of gaps. Cost ≥ 34 (within 1.65 m of an obstacle) is blocked. Goals need 2 m of clearance so the robot can turn on the spot when it leaves; closer goals move up to 2.5 m to get it. Replans every 0.5 s; an empty path means stop. |
-| **control** | Pure pursuit along the path, 10 Hz | Steers toward the path point 1.5 m ahead with curvature 2y / L², at 0.8 m/s. Turns on the spot when the target is behind. When the turn rate would exceed 1 rad/s it slows down rather than widening the arc. Stops with a single zero command. |
+| **control** | Pure pursuit along the path, 10 Hz | Steers toward the path point 1.8 m ahead with curvature 2y / L², at 1.5 m/s. Turns on the spot when the target is behind. When the turn rate would exceed 1.5 rad/s it slows down rather than widening the arc. Stops with a single zero command. |
 
 ### Node interfaces
 | Node | Subscribes | Publishes | Timer | Code |
@@ -72,29 +72,37 @@ Found by reading the simulator's source and checking in the running sim:
 - **Flat arrays for A\*, not a hash map of cells.** The grid has a fixed size, so every per-cell value (cost so far,
   parent, visited) lives in a vector indexed by `y * width + x`. That is simpler and faster than hashing cell
   coordinates; a plan across the arena takes 0.2–6.2 ms.
-- **Slow down rather than cut corners.** When a curve needs more than 1 rad/s of turning, the controller keeps the
+- **Slow down rather than cut corners.** When a curve needs more than 1.5 rad/s of turning, the controller keeps the
   curvature and lowers the speed, so the robot stays on the planned line instead of swinging wide.
+- **Top speed is set by physics, not ambition.** The simulator applies speed changes instantly, so at 3 m/s the light
+  robot pitched up to 16°, tilting the lidar into the floor; tilted scans carried ~40 phantom hits each against ~1
+  when level, and the map filled with fake obstacles. At 1.5 m/s pitch stays under about 3°. The lookahead is 1.8 m:
+  a longer one (2.5 m) cuts too far inside curves, a shorter one weaves at this speed. Going faster would first need
+  acceleration limiting in the controller.
 - **Stop with one command.** Since the simulator keeps executing the last command, stopping has to be explicit; after
   one zero command the controller goes silent, so manual teleop still works whenever the robot is idle.
 
 ## Results
+**[▶ Demo video](https://drive.google.com/file/d/1Ttzek0rLZ-83s_e8tNnNfj-8D2mpI1om/view?usp=sharing)**: clicked
+goals in Foxglove, the robot planning around obstacles, squeezing through the tightest gap, and replanning mid-trip.
+
 Measured in the running simulator against the true obstacle positions from the world file, using the robot's full
-2 m × 1.4 m outline. This is the final run: a fresh clone of this repo, a cold `./watod up`, and ten trips starting
-from the spawn point, after the fixes described below.
+2 m × 1.4 m outline. This is the final run: a cold `./watod up` of this repo and ten trips at 1.5 m/s starting from
+the spawn point, after the fixes described below.
 
 | Scenario | Outcome | Closest the robot's body got to an obstacle |
 |---|---|---|
-| First goal right after startup, behind the cylinder the robot faces | arrived | 1.14 m |
-| Goal clicked 1 m from a box | arrived; goal moved out to leave turning room | 0.20 m |
-| Then a goal behind the robot, clicked 1.4 m from the big cylinder | arrived; goal moved out | 0.59 m |
-| Then a goal behind again | arrived | 0.82 m |
-| New goal given in the middle of a trip | arrived | 0.59 m |
-| Tightest gap in the arena (3.75 m, box to south wall) | arrived | 1.11 m |
-| Gap between the two south-east boxes | arrived | 1.20 m |
-| Three long trips across the arena (18–30 s each) | arrived | 1.13 m or more |
+| First goal right after startup, behind the cylinder the robot faces | arrived | 1.04 m |
+| Goal clicked 1 m from a box | arrived; goal moved out to leave turning room | 0.62 m |
+| Then a goal behind the robot, clicked 1.4 m from the big cylinder | arrived; goal moved out | 0.66 m |
+| Then a goal behind again | arrived | 0.90 m |
+| New goal given in the middle of a trip | arrived | 0.64 m |
+| Tightest gap in the arena (3.75 m, box to south wall) | arrived | 1.07 m |
+| Gap between the two south-east boxes | arrived | 1.19 m |
+| Three long trips across the arena (10–18 s each) | arrived | 1.17 m or more |
 
-- **10 of 10 goals reached with no contact.** A path across the whole arena plans in 0.2–6.2 ms.
-- **The map is accurate.** After all ten trips, `/map` holds 3,880 obstacle cells: 99% lie within 0.10 m of a real
+- **10 of 10 goals reached with no contact**, all ten trips in 119 s. A path across the whole arena plans in 0.2–6.2 ms.
+- **The map is accurate.** After all ten trips, `/map` holds 3,893 obstacle cells: 99% lie within 0.10 m of a real
   surface, the worst is 0.20 m off, and none are phantoms (more than 0.25 m off).
 - **The map is ready at startup.** After a cold `./watod up`, `/map` shows the real obstacles within about 7 s.
 - **Idle means silent.** When it has no path the controller publishes nothing, so Foxglove's teleop panel works.
@@ -115,6 +123,11 @@ from the spawn point, after the fixes described below.
    the scan hadn't arrived yet, so the pose used was up to 97 ms old. During a gentle turn that is enough to swing a
    wall 15 m away by 0.4 m. Costmaps now wait until odometry exists on both sides of their scan, and the pose at the
    scan time is interpolated.
+5. **Driving faster starved the map.** At 1.5 m/s the robot grazed the big cylinder on three runs out of three. The
+   controller was tracking its path fine: the *path* ran 0.18 m from the real cylinder, because the far side had
+   never reached the map. The map refused to merge while turning faster than 0.3 rad/s, a guard from before scans
+   were time-matched, and at 1.5 m/s every curve around an obstacle turns faster than that. With the guard at
+   1.0 rad/s (still blocking fast spins on the spot) the same trip clears the cylinder by 1.05–1.11 m.
 
 ## Extending the system
 - **On a real robot.** The navigation nodes only talk to `/lidar`, `/odom/filtered` and `/cmd_vel`, so the Gazebo
